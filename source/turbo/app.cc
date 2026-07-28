@@ -121,8 +121,10 @@ TurboApp::TurboApp(int argc, const char *argv[]) noexcept :
 
     if (char *cfgdir = getenv("XDG_CONFIG_HOME"))
         config_path += cfgdir;
-    else
+    else {
         config_path += getenv("HOME");
+        config_path += "/.config";
+    }
     config_path += "/turbo.toml";
 
     loadConfig();
