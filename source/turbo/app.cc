@@ -36,6 +36,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef TURBO_USE_CFGFILE
+extern "C" {
+#include <tomlinc.h>
+TomlTable *find_or_create_table(TomlTable **root, const char *name);    // Need to exose this from the internals otherwise there's no way of making a new table
+}
+#endif
+
 using namespace Scintilla;
 using namespace std::literals;
 
@@ -508,51 +515,54 @@ const char *TurboApp::getFileDialogDir() noexcept
     return config.mostRecentDir.c_str();
 }
 
+#ifdef TURBO_USE_CFGFILE
+inline int tomlinc_get_bool_value(TomlTable *a, const char *b, const char *c, bool *result) {
+    int _result;
+    int rc = tomlinc_get_bool_value(a, b, c, &_result);
+    *result = _result;
+    return rc;
+}
+inline int tomlinc_get_string_value(TomlTable *a, const char *b, const char *c, std::string *result) {
+    char *str = tomlinc_get_string_value(a, b, c);
+    if (str)
+        *result = str;
+    return str != nullptr;
+}
+#endif
+
 void TurboApp::loadConfig()
 {
-    std::string errmsg;
+#ifdef TURBO_USE_CFGFILE
+    TomlTable *toml = tomlinc_open_file(config_path.c_str());
+    if (!toml) return; // Config file doesn't exist yet. Keep defaults
 
-    // Return if config file doesn;t exist
-    FILE *f = fopen(config_path.c_str(), "r");
-    if (!f) return; // Config file doesn't exist yet. Keep defaults
-    fclose(f);
+    tomlinc_get_bool_value(toml, "Editor", "lineNumbers", &config.lineNumbers);
+    tomlinc_get_bool_value(toml, "Editor", "autoIndent",  &config.autoIndent);
+    tomlinc_get_bool_value(toml, "Editor", "wrapping",    &config.wrapping);
 
-    // Any remaining errors will be parse errors
-    auto res = toml::parseFile(config_path);
-    if (res.table) {
-        bool ok;
+    tomlinc_get_string_value(toml, "State", "mostRecentDir", &config.mostRecentDir);
 
-        auto editor = res.table->getTable("Editor");
-        if (editor) {
-            std::tie(ok, config.lineNumbers) = editor->getBool("lineNumbers");
-            std::tie(ok, config.autoIndent)  = editor->getBool("autoIndent");
-            std::tie(ok, config.wrapping)    = editor->getBool("wrapping");
-        }
+    tomlinc_close_file(toml);
 
-        auto state = res.table->getTable("State");
-        if (state) {
-            std::tie(ok, config.mostRecentDir) = state->getBool("mostRecentDir");
-        }
-
-        return;
-    }
-
-    messageBox( mfError | mfOKButton, "Error loading config:\n%s", res.errmsg.c_str());
+    // messageBox( mfError | mfOKButton, "Error loading config:\n%s", res.errmsg.c_str());
+#endif
 }
 
 void TurboApp::saveConfig()
 {
-    // https://github.com/cktan/tomlc99/issues/91
+#ifdef TURBO_USE_CFGFILE
+    TomlTable *toml = nullptr;
+    find_or_create_table(&toml, "Editor");
 
-    FILE *out = fopen(config_path.c_str(), "w");
+    tomlinc_set_bool_value(toml, "Editor", "lineNumbers", config.lineNumbers);
+    tomlinc_set_bool_value(toml, "Editor", "autoIndent",  config.autoIndent);
+    tomlinc_set_bool_value(toml, "Editor", "wrapping",    config.wrapping);
 
-    fprintf(out, "[Editor]\n");
-    fprintf(out, "lineNumbers = %s\n", config.lineNumbers ? "true" : "false");
-    fprintf(out, "autoIndent = %s\n", config.autoIndent ? "true" : "false");
-    fprintf(out, "wrapping = %s\n", config.wrapping ? "true" : "false");
-    fprintf(out, "\n");
-    fprintf(out, "[State]\n");
-    fprintf(out, "mostRecentDir = \"%s\"\n", config.mostRecentDir.c_str());
+    find_or_create_table(&toml, "State");
 
-    fclose(out);
+    tomlinc_set_string_value(toml, "State", "mostRecentDir", config.mostRecentDir.c_str());
+
+    tomlinc_save_file(toml, config_path.c_str());
+    tomlinc_close_file(toml);
+#endif
 }
