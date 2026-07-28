@@ -143,13 +143,6 @@ endif()
 if (TURBO_BUILD_APP)
     file(GLOB_RECURSE TURBO_SRC "${CMAKE_CURRENT_LIST_DIR}/source/${TURBO}/*.cc")
 
-    if (TURBO_USE_CFGFILE)
-        list(APPEND TURBO_SRC
-            "${CMAKE_CURRENT_LIST_DIR}/deps/tomlinc/src/tomlinc.c"
-            "${CMAKE_CURRENT_LIST_DIR}/deps/tomlinc/src/tomlinc_internal.c"
-        )
-    endif()
-
     add_executable(${TURBO} ${TURBO_SRC})
     target_compile_features(${TURBO} PRIVATE cxx_std_17)
     turbo_set_warnings(${TURBO})
@@ -160,9 +153,6 @@ if (TURBO_BUILD_APP)
     if (TURBO_USE_CFGFILE)
         target_compile_definitions(${TURBO} PRIVATE TURBO_USE_CFGFILE)
         target_link_libraries(${TURBO} PRIVATE -ltomlcpp)
-        target_include_directories(${TURBO} PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/deps/tomlinc/include
-        )
     endif()
 
     install(TARGETS ${TURBO} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

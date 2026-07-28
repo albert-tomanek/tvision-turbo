@@ -30,17 +30,13 @@
 #include <turbo/fileeditor.h>
 #include <turbo/tpath.h>
 #include <turbo/styles.h>
-#include <toml.h>
-#include <tomlcpp.hpp>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #ifdef TURBO_USE_CFGFILE
-extern "C" {
-#include <tomlinc.h>
-TomlTable *find_or_create_table(TomlTable **root, const char *name);    // Need to exose this from the internals otherwise there's no way of making a new table
-}
+#include <toml.h>
+#include <tomlcpp.hpp>
 #endif
 
 using namespace Scintilla;
@@ -123,8 +119,11 @@ TurboApp::TurboApp(int argc, const char *argv[]) noexcept :
             docTree->hide();
     }
 
-    config_path = "/.config/turbo.toml";
-    config_path.insert(0, getenv("HOME"));
+    if (char *cfgdir = getenv("XDG_CONFIG_HOME"))
+        config_path += cfgdir;
+    else
+        config_path += getenv("HOME");
+    config_path += "/turbo.toml";
 
     loadConfig();
 }
@@ -515,54 +514,55 @@ const char *TurboApp::getFileDialogDir() noexcept
     return config.mostRecentDir.c_str();
 }
 
-#ifdef TURBO_USE_CFGFILE
-inline int tomlinc_get_bool_value(TomlTable *a, const char *b, const char *c, bool *result) {
-    int _result;
-    int rc = tomlinc_get_bool_value(a, b, c, &_result);
-    *result = _result;
-    return rc;
-}
-inline int tomlinc_get_string_value(TomlTable *a, const char *b, const char *c, std::string *result) {
-    char *str = tomlinc_get_string_value(a, b, c);
-    if (str)
-        *result = str;
-    return str != nullptr;
-}
-#endif
-
 void TurboApp::loadConfig()
 {
 #ifdef TURBO_USE_CFGFILE
-    TomlTable *toml = tomlinc_open_file(config_path.c_str());
-    if (!toml) return; // Config file doesn't exist yet. Keep defaults
+    std::string errmsg;
 
-    tomlinc_get_bool_value(toml, "Editor", "lineNumbers", &config.lineNumbers);
-    tomlinc_get_bool_value(toml, "Editor", "autoIndent",  &config.autoIndent);
-    tomlinc_get_bool_value(toml, "Editor", "wrapping",    &config.wrapping);
+    // Return if config file doesn;t exist
+    FILE *f = fopen(config_path.c_str(), "r");
+    if (!f) return; // config file doesnt exist yet
+    fclose(f);
 
-    tomlinc_get_string_value(toml, "State", "mostRecentDir", &config.mostRecentDir);
+    // Any remaining errors will be parse errors
+    auto res = toml::parseFile(config_path);
+    if (res.table) {
+        bool ok;
 
-    tomlinc_close_file(toml);
+        auto editor = res.table->getTable("Editor");
+        if (editor) {
+            std::tie(ok, config.lineNumbers) = editor->getBool("lineNumbers");
+            std::tie(ok, config.autoIndent)  = editor->getBool("autoIndent");
+            std::tie(ok, config.wrapping)    = editor->getBool("wrapping");
+        }
 
-    // messageBox( mfError | mfOKButton, "Error loading config:\n%s", res.errmsg.c_str());
+        auto state = res.table->getTable("State");
+        if (state) {
+            std::tie(ok, config.mostRecentDir) = state->getBool("mostRecentDir");
+        }
+
+        return;
+    }
+
+    messageBox( mfError | mfOKButton, "Error loading config:\n%s", res.errmsg.c_str());
 #endif
 }
 
 void TurboApp::saveConfig()
 {
 #ifdef TURBO_USE_CFGFILE
-    TomlTable *toml = nullptr;
-    find_or_create_table(&toml, "Editor");
+    // https://github.com/cktan/tomlc99/issues/91
 
-    tomlinc_set_bool_value(toml, "Editor", "lineNumbers", config.lineNumbers);
-    tomlinc_set_bool_value(toml, "Editor", "autoIndent",  config.autoIndent);
-    tomlinc_set_bool_value(toml, "Editor", "wrapping",    config.wrapping);
+    FILE *out = fopen(config_path.c_str(), "w");
 
-    find_or_create_table(&toml, "State");
+    fprintf(out, "[Editor]\n");
+    fprintf(out, "lineNumbers = %s\n", config.lineNumbers ? "true" : "false");
+    fprintf(out, "autoIndent = %s\n", config.autoIndent ? "true" : "false");
+    fprintf(out, "wrapping = %s\n", config.wrapping ? "true" : "false");
+    fprintf(out, "\n");
+    fprintf(out, "[State]\n");
+    fprintf(out, "mostRecentDir = \"%s\"\n", config.mostRecentDir.c_str());
 
-    tomlinc_set_string_value(toml, "State", "mostRecentDir", config.mostRecentDir.c_str());
-
-    tomlinc_save_file(toml, config_path.c_str());
-    tomlinc_close_file(toml);
+    fclose(out);
 #endif
 }
