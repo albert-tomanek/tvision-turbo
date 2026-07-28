@@ -17,9 +17,11 @@
 #define Uses_TParamText
 #define Uses_TScreen
 #define Uses_MsgBox
+#define Uses_TButton
 #include <tvision/tv.h>
 
 #include "app.h"
+#include "help.h"
 #include "apputils.h"
 #include "editwindow.h"
 #include "widgets.h"
@@ -34,25 +36,10 @@
 #include <string.h>
 #include <stdlib.h>
 
-std::string config_path = "/.config/turbo.toml";
-
 using namespace Scintilla;
 using namespace std::literals;
 
-TurboApp* TurboApp::app = 0;
 TCommandSet allCmUseLanguages;
-
-int main(int argc, const char *argv[])
-{
-    config_path.insert(0, getenv("HOME"));
-
-    TurboApp app(argc, argv);
-    TurboApp::app = &app;
-    app.run();
-    app.saveConfig();
-    app.shutDown();
-    TurboApp::app = 0;
-}
 
 TurboApp::TurboApp(int argc, const char *argv[]) noexcept :
     TProgInit( &TurboApp::initStatusLine,
@@ -71,7 +58,6 @@ TurboApp::TurboApp(int argc, const char *argv[]) noexcept :
     ts += cmSave;
     ts += cmSaveAs;
     ts += cmRename;
-    ts += cmOpenRecent;
     ts += cmToggleWrap;
     ts += cmToggleLineNums;
     ts += cmFind;
@@ -130,6 +116,9 @@ TurboApp::TurboApp(int argc, const char *argv[]) noexcept :
             docTree->hide();
     }
 
+    config_path = "/.config/turbo.toml";
+    config_path.insert(0, getenv("HOME"));
+
     loadConfig();
 }
 
@@ -149,7 +138,6 @@ TMenuBar *TurboApp::initMenuBar(TRect r)
         *new TSubMenu( "~F~ile", kbAltF, hcNoContext ) +
             *new TMenuItem( "~N~ew", cmNew, kbCtrlN, hcNoContext, "Ctrl-N" ) +
             *new TMenuItem( "~O~pen", cmOpen, kbCtrlO, hcNoContext, "Ctrl-O" ) +
-            *new TMenuItem( "Open R~e~cent...", cmOpenRecent, kbNoKey, hcNoContext ) +
             newLine() +
             *new TMenuItem( "~S~ave", cmSave, kbCtrlS, hcNoContext, "Ctrl-S" ) +
             *new TMenuItem( "S~a~ve As...", cmSaveAs, kbNoKey, hcNoContext ) +
@@ -192,8 +180,13 @@ TMenuBar *TurboApp::initMenuBar(TRect r)
             *new TMenuItem( "Toggle Line ~W~rapping", cmToggleWrap, kbF9, hcNoContext, "F9" ) +
             *new TMenuItem( "Toggle Auto ~I~ndent", cmToggleIndent, kbNoKey, hcNoContext ) +
             *new TMenuItem( "Toggle Document ~T~ree View", cmToggleTree, kbNoKey, hcNoContext ) +
-            *new TMenuItem( "Document ~L~anguage", kbNoKey, new TMenu(*langList))
+            *new TMenuItem( "Document ~L~anguage", kbNoKey, new TMenu(*langList)) +
+        *new TSubMenu( "~H~elp", kbAltH ) +
+            *new TMenuItem( "~K~eyboard shortcurs", cmHelp, kbF1, hcNoContext, "F1" ) +
+            newLine() +
+            *new TMenuItem( "~A~bout...", cmAbout, kbNoKey, hcNoContext )
         );
+
 }
 
 TStatusLine *TurboApp::initStatusLine( TRect r )
@@ -296,6 +289,12 @@ void TurboApp::handleEvent(TEvent &event)
                 });
                 break;
 
+            case cmAbout:
+                TurboHelp::executeAboutDialog(*deskTop);
+                break;
+            case cmHelp:
+                TurboHelp::showOrFocusHelpWindow(*deskTop);
+                break;
             default:
                 handled = false;
                 break;
@@ -410,11 +409,11 @@ void TurboApp::showEditorList(TEvent *ev)
 {
     EditorListModel model {MRUlist};
     TRect r {0, 0, 0, 0};
-    r.b.x = min(max(maxWidth(model) + 6, 40), deskTop->size.x - 10);
+    r.b.x = min(max(ListModel::maxItemCStrLen(model) + 4, 40), deskTop->size.x - 10);
     r.b.y = min(max(model.size() + 2, 6), deskTop->size.y - 4);
     r.move((deskTop->size.x - r.b.x) / 2,
            (deskTop->size.y - r.b.y) / 4);
-    ListWindow *lw = new ListWindow(r, "Buffer List", model, ListViewCreator<EditorListView>());
+    ListWindow *lw = &ListWindow::create<EditorListView>(r, "Buffer List", model, lvScrollBars);
     if (ev)
         lw->putEvent(*ev);
     if (deskTop->execView(lw) == cmOK)
@@ -508,8 +507,6 @@ const char *TurboApp::getFileDialogDir() noexcept
 {
     return config.mostRecentDir.c_str();
 }
-
-#define ERRLEN 100
 
 void TurboApp::loadConfig()
 {

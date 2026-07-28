@@ -1,26 +1,30 @@
 name: Build
 
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 env:
   BUILD_TYPE: MinSizeRel
+  TURBO_COMMIT_SHA: ${{ github.sha }}
 
 jobs:
   build-linux-gcc:
     name: Linux (GCC 7)
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
     - name: Install Dependencies
       run: |
+        # Add legacy repositories required by g++-7
         sudo tee --append /etc/apt/sources.list << EOF
           deb http://us.archive.ubuntu.com/ubuntu/ bionic universe
+          deb http://us.archive.ubuntu.com/ubuntu/ bionic main
         EOF
-        sudo apt -y update
-        sudo apt -y install libncursesw5-dev g++-7 libgtest-dev
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
+        sudo apt-get -y update
+        sudo apt-get -y install g++-7 libgtest-dev
 
     - name: Configure CMake
       shell: bash
@@ -37,7 +41,7 @@ jobs:
     name: Windows (MSVC) (Win32)
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -50,7 +54,7 @@ jobs:
       run: cmake --build . --config $BUILD_TYPE -- -p:UseMultiToolTask=true -p:CL_MPcount=$(nproc)
 
     - name: Upload Artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: turbo-x86
         path: |
@@ -60,7 +64,7 @@ jobs:
     name: Windows (MSVC) (x64)
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -73,7 +77,7 @@ jobs:
       run: cmake --build . --config $BUILD_TYPE -- -p:UseMultiToolTask=true -p:CL_MPcount=$(nproc)
 
     - name: Upload Artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: turbo-x64
         path: |
@@ -83,7 +87,7 @@ jobs:
     name: Windows (MinGW)
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -99,7 +103,7 @@ jobs:
     name: MacOS (Clang)
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 

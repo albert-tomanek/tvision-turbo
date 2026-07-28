@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required (VERSION 3.5...3.30)
 
 option(TURBO_BUILD_APP "Build main editor application" ON)
 option(TURBO_BUILD_TESTS "Build and run tests" OFF)
@@ -6,6 +6,7 @@ option(TURBO_BUILD_EXAMPLES "Build example apps" OFF)
 option(TURBO_USE_SYSTEM_TVISION "Use system-wide Turbo Vision instead of the submodule" OFF)
 option(TURBO_USE_STATIC_RTL "Link against the static version of the runtime library (MSVC only)" OFF)
 option(TURBO_OPTIMIZE_BUILD "Use Precompiled Headers and Unity Build for the core library" ON)
+set(TURBO_COMMIT_SHA $ENV{TURBO_COMMIT_SHA} CACHE STRING "Commit SHA to be displayed in the 'About' dialog")
 
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.15.0")
     cmake_policy(SET CMP0091 NEW)
@@ -17,6 +18,8 @@ endif()
 project (turbo)
 
 set(TURBO_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+include(GNUInstallDirs)
 
 # Target 'scintilla'
 
@@ -113,16 +116,16 @@ target_link_libraries(${TURBO}-core PUBLIC
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.13.0")
     install(TARGETS ${TURBO}-core
         EXPORT ${TURBO}-config
-        ARCHIVE DESTINATION lib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         COMPONENT library
     )
     install(EXPORT ${TURBO}-config
-        DESTINATION lib/cmake/${TURBO}
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${TURBO}
         NAMESPACE ${TURBO}::
         FILE ${TURBO}-config.cmake
         COMPONENT library
     )
-    install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/include/turbo" DESTINATION include)
+    install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/include/turbo" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(FILES "${CMAKE_CURRENT_LIST_DIR}/doc/turbo.1" DESTINATION share/man/man1)
 endif()
 
@@ -144,12 +147,24 @@ if (TURBO_BUILD_APP)
     target_link_libraries(${TURBO} PRIVATE
         ${TURBO}-core
     )
+
     target_link_libraries(${TURBO} PRIVATE -ltomlcpp)
-    install(TARGETS ${TURBO} RUNTIME DESTINATION bin)
+    
+    install(TARGETS ${TURBO} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+    if (NOT "${TURBO_COMMIT_SHA}" STREQUAL "")
+        string(SUBSTRING "${TURBO_COMMIT_SHA}" 0 8 TURBO_COMMIT_SHORT_SHA)
+        target_compile_definitions(${TURBO} PRIVATE TURBO_VERSION_STRING="${TURBO_COMMIT_SHORT_SHA}")
+    endif()
 
     if (WIN32)
         file(GLOB_RECURSE TURBO_RC "${CMAKE_CURRENT_LIST_DIR}/source/${TURBO}/*.rc")
         target_sources(${TURBO} PRIVATE ${TURBO_RC})
+
+        if (MSVC)
+            # Wildcard argument expansion
+            set_target_properties(${TURBO} PROPERTIES LINK_FLAGS wsetargv.obj)
+        endif()
     elseif (APPLE)
         add_custom_command(TARGET ${TURBO} POST_BUILD COMMAND
             # Script from https://github.com/mklement0/fileicon
